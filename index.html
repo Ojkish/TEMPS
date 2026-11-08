@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Additionneur de temps</title>
+<style>
+:root{
+  --bg:#eaeef3;--card:#fff;--ink:#121c27;--mute:#5d6b7a;--line:#d5dce4;--field:#f2f5f8;
+  --pos:#0c7d63;--neg:#d01f4c;--acc:#2456d6;
+  --on:#fff;
+  box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){--on:#0e1621;--bg:#0e1621;--card:#16212f;--ink:#e8eef5;--mute:#8ea0b3;--line:#27364a;--field:#0f1925;--pos:#3ccfa5;--neg:#ff6b8b;--acc:#7ea2ff;color-scheme:dark}
+}
+:root[data-theme="dark"]{--on:#0e1621;--bg:#0e1621;--card:#16212f;--ink:#e8eef5;--mute:#8ea0b3;--line:#27364a;--field:#0f1925;--pos:#3ccfa5;--neg:#ff6b8b;--acc:#7ea2ff;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-variant-numeric:tabular-nums}
+main{max-width:520px;margin:0 auto;padding:20px 14px 40px}
+h1{font-size:1.35rem;margin:0 0 4px}
+.sub{margin:0 0 16px;color:var(--mute);font-size:.9rem}
+.row{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:10px;display:grid;grid-template-columns:48px 1fr 44px;gap:8px;align-items:center}
+.row.neg{border-left:5px solid var(--neg)}
+.row.pos{border-left:5px solid var(--pos)}
+button,input{font:inherit;color:inherit}
+.sg{height:48px;border-radius:10px;border:0;font-size:1.8rem;font-weight:700;color:var(--on);cursor:pointer}
+.sg.pos{background:var(--pos)}.sg.neg{background:var(--neg)}
+.dark-fix{color:#fff}
+.lb{height:48px;border:1px solid var(--line);background:var(--field);border-radius:10px;padding:0 12px;width:100%;min-width:0}
+.rm{height:44px;width:44px;border:0;background:none;color:var(--mute);font-size:1.6rem;cursor:pointer;border-radius:10px}
+.tm{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.tm label{display:flex;align-items:center;gap:6px;background:var(--field);border:1px solid var(--line);border-radius:10px;padding:0 10px}
+.tm input{width:100%;min-width:0;height:52px;border:0;background:none;font-size:1.4rem;text-align:right;outline:none}
+.tm label:focus-within,.lb:focus{outline:2px solid var(--acc);outline-offset:1px}
+.tm span{color:var(--mute);font-size:.95rem}
+.cum{grid-column:1/-1;font-size:.9rem;color:var(--mute);text-align:right}
+.cum b{font-weight:600}
+.act{display:flex;gap:10px;margin:14px 0 22px}
+.act button{flex:1;height:48px;border-radius:10px;border:1px solid var(--line);background:var(--card);cursor:pointer}
+.act #add{background:var(--pos);border-color:var(--pos);color:var(--on);font-weight:600}
+.act #sub{background:var(--neg);border-color:var(--neg);color:var(--on);font-weight:600}
+.act #clear{flex:0 0 auto;padding:0 14px}
+.total{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 16px;text-align:center}
+.total .lbl{color:var(--mute);font-size:.95rem}
+#out{font-size:2.6rem;font-weight:700;line-height:1.15;margin:4px 0;word-break:break-word}
+#out.pos{color:var(--pos)}#out.neg{color:var(--neg)}
+#secs{color:var(--mute);font-size:.95rem;margin-bottom:12px}
+#copy{height:44px;padding:0 20px;border-radius:10px;border:1px solid var(--line);background:var(--field);cursor:pointer}
+button:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+</style>
+</head>
+<body>
+<main>
+  <h1>Additionneur de temps</h1>
+  <p class="sub">Ajoute ou retire des durées. Le total se met à jour à chaque saisie.</p>
+  <div id="rows"></div>
+  <div class="act">
+    <button id="add" type="button">+ Ajouter</button>
+    <button id="sub" type="button">− Retrancher</button>
+    <button id="clear" type="button">Effacer</button>
+  </div>
+  <section class="total" aria-live="polite">
+    <div class="lbl">Total</div>
+    <div id="out">00:00:00</div>
+    <div id="secs">0 s</div>
+    <button id="copy" type="button">Copier le total</button>
+  </section>
+</main>
+<script>
+const KEY = 'additionneur-temps-v1';
+const rowsEl = document.getElementById('rows');
+const outEl = document.getElementById('out');
+const secsEl = document.getElementById('secs');
+const newRow = () => ({ sign: 1, label: '', h: '', m: '', s: '' });
+
+let rows = [];
+try { rows = JSON.parse(localStorage.getItem(KEY) || '[]'); } catch (e) {}
+if (!Array.isArray(rows) || !rows.length) rows = [newRow()];
+
+const pad = n => String(n).padStart(2, '0');
+const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+// Une ligne -> secondes (signées). Aucune retenue manuelle : 90 s = 90 s.
+const toSec = r => r.sign * ((parseInt(r.h, 10) || 0) * 3600 + (parseInt(r.m, 10) || 0) * 60 + (parseInt(r.s, 10) || 0));
+
+// Secondes -> texte, avec jours au-delà de 24 h.
+function fmt(t, withPlus) {
+  const a = Math.abs(t);
+  const d = Math.floor(a / 86400);
+  const h = Math.floor((a % 86400) / 3600);
+  const m = Math.floor((a % 3600) / 60);
+  const s = a % 60;
+  const sign = t < 0 ? '\u2212' : (withPlus && t > 0 ? '+' : '');
+  return sign + (d ? d + ' j ' : '') + pad(h) + ':' + pad(m) + ':' + pad(s);
+}
+
+function save() { try { localStorage.setItem(KEY, JSON.stringify(rows)); } catch (e) {} }
+
+function build() {
+  rowsEl.innerHTML = rows.map((r, i) => `
+    <div class="row ${r.sign < 0 ? 'neg' : 'pos'}" data-i="${i}">
+      <button type="button" class="sg ${r.sign < 0 ? 'neg' : 'pos'}" data-a="sign" aria-label="Changer le signe">${r.sign < 0 ? '\u2212' : '+'}</button>
+      <input class="lb" data-f="label" placeholder="Piste ${i + 1}" value="${esc(r.label)}">
+      <button type="button" class="rm" data-a="rm" aria-label="Supprimer la ligne">\u00d7</button>
+      <div class="tm">
+        <label><input data-f="h" inputmode="numeric" pattern="[0-9]*" placeholder="0" value="${esc(r.h)}"><span>h</span></label>
+        <label><input data-f="m" inputmode="numeric" pattern="[0-9]*" placeholder="0" value="${esc(r.m)}"><span>min</span></label>
+        <label><input data-f="s" inputmode="numeric" pattern="[0-9]*" placeholder="0" value="${esc(r.s)}"><span>s</span></label>
+      </div>
+      <div class="cum" data-cum></div>
+    </div>`).join('');
+  update();
+}
+
+function update() {
+  let run = 0;
+  rowsEl.querySelectorAll('.row').forEach((el, i) => {
+    run += toSec(rows[i]);
+    el.querySelector('[data-cum]').innerHTML = 'Cumul\u00a0: <b>' + fmt(run, true) + '</b>';
+  });
+  outEl.textContent = fmt(run, true);
+  outEl.className = run < 0 ? 'neg' : run > 0 ? 'pos' : '';
+  secsEl.textContent = run.toLocaleString('fr-FR') + ' s';
+  save();
+}
+
+rowsEl.addEventListener('input', e => {
+  const f = e.target.dataset.f;
+  if (!f) return;
+  const i = +e.target.closest('.row').dataset.i;
+  if (f !== 'label') e.target.value = e.target.value.replace(/\D/g, '').slice(0, 6);
+  rows[i][f] = e.target.value;
+  update();
+});
+
+rowsEl.addEventListener('focusin', e => {
+  if (e.target.matches('.tm input')) setTimeout(() => e.target.select(), 0);
+});
+
+rowsEl.addEventListener('click', e => {
+  const b = e.target.closest('button[data-a]');
+  if (!b) return;
+  const i = +b.closest('.row').dataset.i;
+  if (b.dataset.a === 'sign') rows[i].sign *= -1;
+  if (b.dataset.a === 'rm') { rows.splice(i, 1); if (!rows.length) rows.push(newRow()); }
+  build();
+});
+
+function addRow(sign) {
+  const r = newRow();
+  r.sign = sign;
+  rows.push(r);
+  build();
+  const last = rowsEl.querySelector('.row:last-child [data-f="h"]');
+  if (last) last.focus();
+}
+document.getElementById('add').addEventListener('click', () => addRow(1));
+document.getElementById('sub').addEventListener('click', () => addRow(-1));
+
+document.getElementById('clear').addEventListener('click', () => { rows = [newRow()]; build(); });
+
+document.getElementById('copy').addEventListener('click', async e => {
+  const btn = e.currentTarget;
+  const total = rows.reduce((a, r) => a + toSec(r), 0);
+  try {
+    await navigator.clipboard.writeText(fmt(total, false).replace('\u2212', '-'));
+    btn.textContent = 'Copié';
+  } catch (err) {
+    btn.textContent = 'Copie impossible';
+  }
+  setTimeout(() => { btn.textContent = 'Copier le total'; }, 1500);
+});
+
+build();
+</script>
+</body>
+</html>
